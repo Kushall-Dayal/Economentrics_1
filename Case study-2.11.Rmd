@@ -1,0 +1,258 @@
+
+#==========================================================
+## SET UP R MARKDOWN
+#==========================================================
+```{r}
+# You should generally clear the working space at the start of every R session
+rm(list = ls())
+
+# Set the directory
+setwd("/Users/dakshatajain/Documents/scu/Econometrics with R/case studies")
+getwd()
+
+# Install/Load the required libraries 
+# run these only once
+install.packages("stargazer") 
+install.packages("ggplot2")
+install.packages("gdata")
+install.packages("ggeffects")
+install.packages("QuantPsyc")
+install.packages("ggeffects")
+install.packages("QuantPsyc")
+install.packages("VIF")
+install.packages("usdm")
+install.packages("lmtest")
+install.packages("multiwayvcov")
+install.packages("sandwich")
+install.packages("AER")
+
+
+# Load libraries everytime you start a session
+library(stargazer)
+library(gdata)
+library(ggplot2)
+library(psych) 
+library(ggeffects)
+library(QuantPsyc)
+library(VIF)
+library(usdm)
+library(lmtest)
+library(multiwayvcov)
+library(sandwich)
+library(foreign)
+library(AER)
+
+# turn off scientific notation except for big numbers. 
+options(scipen = 9)
+```
+
+#==========================================================
+## READ AND EXPLORE DATA
+#==========================================================
+```{r}
+# read in CSV
+mydata = read.csv("Salesperson_training.csv")
+
+# Plot the data summary statistics
+stargazer(mydata, type="text", median=TRUE, iqr=TRUE,digits=1, title="Descriptive Statistics")  
+
+# Checking for normal distribution of the variables to decide if the log-transformed of the variables is required or not 
+#Annual sales
+ggplot(mydata, aes(x=(annual_sales))) + geom_histogram(colour="green")
+ggplot(mydata, aes(x=log(annual_sales))) + geom_histogram(colour="green") # use log transformed dependent variable
+
+#Experience Years
+ggplot(mydata, aes(x=experience_years)) + geom_histogram(colour="green") 
+ggplot(mydata, aes(x=log(experience_years))) + geom_histogram(colour="green") # use log transformed variable
+
+#Self Training score
+ggplot(mydata, aes(x=self_training_score)) + geom_histogram(colour="green", bins = 15) 
+ggplot(mydata, aes(x=log(self_training_score))) + geom_histogram(colour="green", bins=15) # use raw variable
+
+#Age
+ggplot(mydata, aes(x=age)) + geom_histogram(colour="green", bins = 15) 
+ggplot(mydata, aes(x=log(age))) + geom_histogram(colour="green", bins = 15) # use log variable
+
+#Service years
+ggplot(mydata, aes(x=service_years)) + geom_histogram(colour="green") 
+ggplot(mydata, aes(x=log(service_years))) + geom_histogram(colour="green", bins = 15) # use raw transformed variable
+       
+#Scatter Plot for relationship between service years and annual sales
+ggplot(mydata, aes(x=service_years, y=log(annual_sales), fill=service_years)) + geom_point(size=2.5) + 
+  xlab("service years") + ylab("sales") # # Does not visually show any difference between new IT system and old IT system
+
+#Scatter Plot for relationship between self training score and annual sales
+ggplot(mydata, aes(x=self_training_score, y=log(annual_sales), fill=self_training_score)) + geom_point() +  
+  xlab("self training score") + ylab("annual sales") 
+
+```
+#==========================================================
+## BUILD-UP MODEL
+#==========================================================
+```{r}
+#Creating Log-transformed variables
+#Annual Sales
+mydata$logannualsales <- log(mydata$annual_sales)
+
+#Experience Years
+mydata$logexperience<-log(mydata$experience_years)
+mydata$logexperience<-ifelse(mydata$experience_years<0,NA,log(mydata$experience_years+1)) # generates missing values if experience variable is <= 0
+
+# Basic OLS model
+#Theoretical Model 
+m1 <- lm(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year,data=mydata)
+stargazer(m1, 
+          title="Regression Results", type="text", 
+          column.labels=c("Model-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+# Consider alternative models
+
+#Model without considering year variable
+altmodel1 <- lm(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience,data=mydata)
+stargazer(m1, altmodel1, 
+          title="Regression Results", type="text", 
+          column.labels=c("M1","AltModel-1"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+#Model test
+anova(m1,altmodel1,test="Chisq") #m1 is better than altmodel1
+
+#using year variable as factor variable
+
+is.factor(mydata$year) #checking if year is a factor variable, it is not 
+mydata$newvar <- as.factor(mydata$year) #creating a new factor variable newvar
+
+#Model with year as a factor variable 
+altmodel2 <- lm(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+school_years+newvar,data=mydata)
+stargazer(m1, altmodel1, altmodel2,
+          title="Regression Results", type="text", 
+          column.labels=c("M1","AltModel-1", "Altmodel-2"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+#Model test
+anova(altmodel2,altmodel1, test="Chisq") # altmodel1 is better than altmodel2 but since m1 is better than altmodel1, altmodel1 needs to be considered
+
+#Model with interaction of self training score and experience years
+altmodel3 <- lm(logannualsales~self_training_score*logexperience+self_training_score+service_years+male+married+child+log(age)+year,data=mydata)
+stargazer(m1,altmodel3,
+          title="Regression Results", type="text", 
+          column.labels=c( "m1", "AltModel-3"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+anova(m1,altmodel3,test="Chisq") #m1 is better than altmodel3
+
+#Model with quadratic self training score
+altmodel4 <- lm(logannualsales~self_training_score+I(self_training_score^2)+service_years+male+married+child+log(age)+logexperience+year,data=mydata)
+stargazer(m1, altmodel4,
+          title="Regression Results", type="text", 
+          column.labels=c( "m1", "AltModel-4"),
+          df=FALSE, digits=2, star.cutoffs = c(0.05,0.01,0.001)) 
+
+anova(m1,altmodel4,test="Chisq") #m1 is better than altmodel4
+
+## M1 is the best OLS model 
+
+#Plotting the residual plot for m1 OLS model
+
+df$residual=resid(m1)
+
+ggplot(df, aes(y=residual, x=self_training_score)) + geom_point(size=1.5) # The residual plot looks normal
+
+qqnorm(df$residual)
+qqline(df$residual,col=2) #there is no obvious abnormality in the data based on the residual
+
+#Multicollinearity Test
+
+df=mydata[c("self_training_score", "score_other_test", "school_years", "logexperience", "service_years", "male", "married", "child", "age", "mother_education", "year")]
+
+cor(df)
+vif(df)
+vifcor(df) #There is no multicollinearity between the independent variables
+
+#Since the self training variable has endogenity, using IV estimator (as all other variables in the main model are exogenous)
+
+#using score_other_test as an IV estimator
+model1<- ivreg(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year+school_years | score_other_test+service_years+male+married+child+log(age)+logexperience+year,data=mydata) 
+
+summary(model1) # Wald test demonstration
+summary(model1,diagnostics = TRUE) #F-statistics stage1 is > 10, thus it satifies relevance assumption
+
+#using school_years as an IV estimator
+model2<- ivreg(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year | school_years+service_years+male+married+child+log(age)+logexperience+year+school_years,data=mydata) # IV estimator with school_years IV
+
+summary(model2) # Wald test demonstration
+summary(model2,diagnostics = TRUE) #F-statistics stage1 is > 10, thus it satifies relevance assumption
+
+#using mother_eduaction as an IV estimator
+model3<- ivreg(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year | mother_education+service_years+male+married+child+log(age)+logexperience+year,data=mydata) 
+
+summary(model3,diagnostics = TRUE) #F-statistics stage1 is > 10, thus it satifies relevance assumption 
+
+#Using all three IVs
+model5<- ivreg(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year | school_years+score_other_test+mother_education+service_years+male+married+child+log(age)+logexperience+year,data=mydata) 
+
+summary(model5, ,diagnostics = TRUE) # Since F-statistics 1st stage is >10, it satisfies relevance assumption and sargan statistics is insignificant it satisfies exogenity assumption. Therefore the IVs are good 
+
+#Using score other test and school years as IVS
+model4<- ivreg(logannualsales~self_training_score+service_years+male+married+child+log(age)+logexperience+year | school_years+score_other_test+service_years+male+married+child+log(age)+logexperience+year,data=mydata) 
+
+summary(model4, ,diagnostics = TRUE) # Since F-statistics 1st stage is >10, it satisfies relevance assumption and sargan statistics is insignificant it satisfies exogenity assumption. Therefore the IVs are good 
+
+##Since Wu-hausman is significant, IV estimator should be used.
+
+#Heteroskedasticity
+
+gqtest(model4) # Significant Goldfeld-Quandt test indicates heteroscedasticity 
+bptest(model4) # Significant Breusch-Pagan test  indicates heteroscedasticity
+
+#Rectifying for heteroskedasticity
+consstder <- sqrt(diag(vcovHC(model4, type="const"))) # produces normal standard errors
+HWrobstder <- sqrt(diag(vcovHC(model4, type="HC1"))) # produces Huber-White robust standard errors 
+clusrobstder <- sqrt(diag(cluster.vcov(model4, mydata$year))) # produces clustered robust standard errors
+
+stargazer(model4, model4, model4,
+          se=list(consstder, HWrobstder, clusrobstder),
+          title="Regression Results", type="text", 
+          column.labels=c("Normal SE", "HW-Robust SE", "Clustered SE"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001))  # displays normal, HW robust and clustered standard errors. 
+
+#To select the best model, plotting the box plot for the cluster variable year.
+
+ggplot(mydata, aes(x=newvar, y=annual_sales, fill=newvar)) + geom_boxplot() + 
+  xlab("year") + ylab("Sales") # It seems heteroscedasticity arises due to year variable, therefore, we have to use clustered robust standard errors
+
+## We will use clustered robust SE rectified model 
+
+#Final Model: 
+
+#log(Sales) = -1.4809 + 0.0122*self_training_score + 0.0127*service_years - 0.0822*male + 0.1130*married + 0.1218*child + 0.8949*log(age) + 0.0004*logexperience + 0.0435*year
+
+## Obtain predicted values form the final model
+mydata$pred<-predict(model4) 
+
+#Regressing for predicted sales only on self_training_score of the trained employees using simple OLS
+OLS1 = lm(pred~self_training_score,data=mydata)
+
+stargazer(OLS1,
+          title="Regression Results", type="text", 
+          column.labels=c("OLS1"),
+          df=FALSE, digits=4, star.cutoffs = c(0.05,0.01,0.001))
+
+## OLS model using predicted sales
+#logannualsales = 3.9063 + 0.0171*self_training_score
+
+#Obtaining predicted sales for trained and untrained employees using avg self _training_scores
+
+#avg self training score for trained employees = 103.9 
+#Annualsales(trained) = log(5.68299) = 293.8266 
+#Annualsales(untrained) = 5.6334 = 279.6111
+
+# Difference between avg annual sales of trained and untrained group = 14,215 (approx)
+
+#Impact on sales of training on the untrained group as per the predicted sales = 14215*242 = 3.44 million dollars 
+
+
+
+
+
